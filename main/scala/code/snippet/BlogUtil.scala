@@ -35,11 +35,15 @@ class BlogUtil {
   }
 
   def viewentry = {
-    Entry.where(_.id eqs (new ObjectId(S.param("id").get))).fetch(1).map {
-      t =>
-        ".title" #> t.title &
-        ".body" #> t.body
-    }
+   S.param("id").map (
+     t =>
+       ".test *" #> Entry.where(_.id eqs (new ObjectId(t))).fetch(1).map {
+         u =>
+           ".title *" #> u.title &
+           ".body *" #> u.body
+       }
+
+     ).openOr(<span class="error">No Entry!</span>)
   }
 
 
