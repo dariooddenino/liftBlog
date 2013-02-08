@@ -1,95 +1,64 @@
-package code.snippet
+package code.model
 
-import xml.{Node, NodeSeq, Group}
-import code.model.{User, Entry}
-import net.liftweb.http.{SHtml, S}
-import com.foursquare.rogue.Rogue._
-import net.liftweb.common.{Empty, Full, Failure}
-import net.liftweb.record._
+import net.liftweb.mongodb.record.{MongoMetaRecord, MongoRecord}
+import net.liftweb.mongodb.record.field.{StringRefField, ObjectIdPk}
+import net.liftweb.sitemap.Menu
+import net.liftweb.sitemap.Loc.{Hidden, If}
+import net.liftweb.record.field.{TextareaField, StringField}
+import net.liftweb.http.RedirectResponse
+import code.controller.{BlogCache, AddEntry}
+import com.mongodb.WriteConcern
+import net.liftweb.common.{Empty, Box}
 import org.bson.types.ObjectId
 import net.liftweb.util.Helpers._
-
+import com.foursquare.rogue.Rogue._
+import net.liftweb.util._
 
 /**
  * Created with IntelliJ IDEA.
  * User: Dario
  * Date: 24/01/13
- * Time: 22.23
+ * Time: 22.11
  * To change this template use File | Settings | File Templates.
  */
-class BlogUtil {
+object Entry extends Entry with MongoMetaRecord[Entry] {
 
-  var title = ""
-  var body = ""
+  // Once the transaction is committed, fill in the blog cache with this entry
+  // Era un override, l'ho tolto...
+  // def afterCommit =
+  //   ((entry: Entry) => {BlogCache.cache ! AddEntry(entry, entry.author.is)}) :: Nil
 
+  val sitemap = List(
+    Menu.i("CreateEntry") / "entry" >> If(User.loggedIn_? _, () => RedirectResponse("index")),
+    Menu.i("ViewEntry") / "view" >> Hidden,
+    Menu.i("ViewBlog") / "blog"
+  )
 
-  def saveEntry() {
-    val e = Entry.createRecord.author(User.currentUser.get.id.toString).title(title).body(body).save
-    S.redirectTo("/view?id=" + e.id)
+  override def save(e: Entry, c: WriteConcern) = {
+    BlogCache.cache ! AddEntry(e, e.author.is)
+
+    super.save(e, c)
   }
 
-  def entry = {
-    "#etitle" #> SHtml.text(title, title = _) &
-      "#ebody" #> SHtml.text(body, body = _) &
-      "#esubmit" #> SHtml.submit("Save", saveEntry)
+  // Find an Entry by id
+  def getById(id: String) = ObjectId.isValid(id) match {
+    case true => Entry.where(_.id eqs (new ObjectId(id))).get
+    case false => None
   }
 
+}
 
+class Entry extends MongoRecord[Entry] with ObjectIdPk[Entry] {
+  def meta = Entry
 
-  def viewentry = {
-    S.param("id").map {
-      id: String =>
-        Entry.getById(id) match {
-          case None => ".error *" #> "Invalid id!"
-          case Some(e) =>
-            ".title *" #> e.title &
-            ".body *" #> e.body
-        }
-    }.openOr(".error *" #> "No id!")
-  }
+  object author extends StringRefField(this, User, 128)
 
-  def _entryview(e: Entry): Node = {
-    <div>
-      <strong>
-        {e.title}
-      </strong> <br/>
-      <span>
-        {e.body}
-      </span>
-    </div>
-  }
+  // non va bene, deve passare l'entry, non il title...
+  // override save
+  object title extends StringField(this, 128)
 
-
-  def viewblog(xhtml: Group): NodeSeq = {
-    // Find all Entries by author using the parameter
-    val t = Entry where (_.author eqs S.param("id").getOrElse("")) orderDesc (_.id) fetch (20)
-    t match {
-      // If no 'id' was requested, then show a listing of all users.
-      case Nil => User fetch() map (u => <span>
-        <a href={"/blog?id=" + u.id}>
-          {u.firstName + " " + u.lastName}
-        </a> <br/>
-      </span>)
-
-      case entries =>
-        <lift:comet type="DynamicBlogView" name={S.param("id").get}>
-          <blog:view>Loading...</blog:view>
-        </lift:comet>
-    }
-  }
-
-
-  def requestDetails: NodeSeq = {
-    <span>
-      <p>
-        Request's Locale:
-        {S.locale}
-      </p>
-      <p>
-        Request(User): Locale :
-        {User.currentUser.map(ignore => S.locale.toString).openOr("No User logged in.")}
-      </p>
-    </span>
+  object body extends TextareaField(this, 20000) {
+    override def setFilter = notNull _ :: trim _ :: crop _ :: super.setFilter
   }
 
 }
