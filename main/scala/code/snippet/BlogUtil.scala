@@ -4,11 +4,10 @@ import xml.{Node, NodeSeq, Group}
 import code.model.{User, Entry}
 import net.liftweb.http.{SHtml, S}
 import com.foursquare.rogue.Rogue._
-import net.liftweb.common.{Empty, Full}
+import net.liftweb.common.{Empty, Full, Failure}
 import net.liftweb.record._
 import org.bson.types.ObjectId
 import net.liftweb.util.Helpers._
-import net.liftweb.http.SHtml._
 
 
 /**
@@ -23,6 +22,7 @@ class BlogUtil {
   var title = ""
   var body = ""
 
+
   def saveEntry() {
     val e = Entry.createRecord.author(User.currentUser.get.id.toString).title(title).body(body).save
     S.redirectTo("/view?id=" + e.id)
@@ -34,18 +34,19 @@ class BlogUtil {
       "#esubmit" #> SHtml.submit("Save", saveEntry)
   }
 
+
+
   def viewentry = {
-   S.param("id").map (
-     t =>
-       ".test *" #> Entry.where(_.id eqs (new ObjectId(t))).fetch(1).map {
-         u =>
-           ".title *" #> u.title &
-           ".body *" #> u.body
-       }
-
-     ).openOr(<span class="error">No Entry!</span>)
+    S.param("id").map {
+      id: String =>
+        Entry.getById(id) match {
+          case None => ".error *" #> "Invalid id!"
+          case Some(e) =>
+            ".title *" #> e.title &
+            ".body *" #> e.body
+        }
+    }.openOr(".error *" #> "No id!")
   }
-
 
   def _entryview(e: Entry): Node = {
     <div>
@@ -57,6 +58,7 @@ class BlogUtil {
       </span>
     </div>
   }
+
 
   def viewblog(xhtml: Group): NodeSeq = {
     // Find all Entries by author using the parameter
@@ -75,6 +77,7 @@ class BlogUtil {
         </lift:comet>
     }
   }
+
 
   def requestDetails: NodeSeq = {
     <span>
